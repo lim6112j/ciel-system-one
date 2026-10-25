@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CJet guards the airbase</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --border: #d9dde3; --text: #1c2128;
+    --muted: #6b7280; --accent: #4f46e5; --accent-soft: #eef2ff;
+    --danger: #b91c1c; --danger-bg: #fef2f2; --ok: #047857; --warn: #b45309;
+    --warn-bg: #fffbeb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  header { padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { margin: 0; font-size: 17px; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; max-width: 82ch; }
+  header a { color: var(--accent); text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+  main {
+    display: grid; grid-template-columns: minmax(460px, 6fr) minmax(340px, 5fr);
+    gap: 20px; padding: 20px 24px; max-width: 1360px; margin: 0 auto;
+  }
+  @media (max-width: 940px) { main { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; margin-bottom: 16px;
+  }
+  .panel h2 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--muted); }
+  canvas { display: block; width: 100%; background: #0b1220; border-radius: 8px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin-top: 10px; }
+  .controls label { color: var(--muted); font-size: 12px; }
+  button, select, input[type=range] { font: inherit; }
+  button, select {
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 11px; background: #fff; cursor: pointer; color: var(--text); font-size: 13px;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent);
+    color: #fff; font-weight: 600; }
+  button.primary:hover { opacity: 0.9; color: #fff; }
+  button.attack { border-color: #fecaca; color: var(--danger); }
+  button.attack:hover { background: var(--danger-bg); }
+  .ctl { display: inline-flex; align-items: center; gap: 5px; }
+  .row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
+  /* The model select carries long "what this head is" labels; it takes most of the row
+     so the text is readable, and the sub-path select takes the rest. */
+  .row .field { min-width: 0; }
+  .row .field.model { flex: 3 1 0; }
+  .row .field.path { flex: 2 1 0; }
+  label.ctl2 { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  select { width: 100%; }
+  .muted { color: var(--muted); }
+  .meta { color: var(--muted); font-size: 12px; }
+  .banner { padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; font-size: 13px; }
+  .banner.error { background: var(--danger-bg); color: var(--danger); border: 1px solid #fecaca; }
+  .banner.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid #fde68a; }
+  .banner.hidden { display: none; }
+  .hud { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted);
+    font-size: 12px; margin: 10px 0 2px; }
+  .hud strong { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* the unit chips: all six, one row */
+  .units { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+  .unit { border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px;
+    font-size: 11px; line-height: 1.35; }
+  .unit .name { font-weight: 600; font-size: 11.5px; }
+  .unit .state { color: var(--muted); }
+  .unit.contact { border-color: #fca5a5; background: #fef2f2; }
+  .unit.offline { opacity: 0.55; border-style: dashed; }
+  .unit.degraded { background: var(--warn-bg); }
+
+  /* the verdict card */
+  .verdict { border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+    margin-bottom: 10px; }
+  .verdict.danger { border-color: #ef4444; background: #fef2f2; }
+  .verdict\\.notsure { border-color: #fbbf24; background: var(--warn-bg); }
+  .verdict .headline { font-size: 18px; font-weight: 700; letter-spacing: 0.01em; }
+  .verdict.danger .headline { color: var(--danger); }
+  .verdict .gold { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .bars { margin-top: 10px; }
+  .bar { display: grid; grid-template-columns: 74px 1fr 46px; gap: 8px;
+    align-items: center; margin-bottom: 5px; font-size: 12px; }
+  .bar .bar-track { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+  .bar .bar-fill { height: 100%; background: #9ca3af; border-radius: 4px; }
+  .bar.winner .bar-label { font-weight: 700; }
+  .bar.winner .bar-fill { background: var(--accent); }
+  .bar.danger.winner .bar-fill { background: var(--danger); }
+  .bar.refused .bar-label { text-decoration: line-through; color: var(--danger); }
+  .bar.refused .bar-fill { background: #fca5a5; }
+  .bar .bar-pct { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .gatelist { margin-top: 8px; font-size: 11.5px; color: var(--muted); }
+
+  #stateView { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px; background: #f3f4f6; border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px; white-space: pre-wrap; word-break: break-word;
+    margin: 0; }
+  #history { max-height: 210px; overflow-y: auto; margin-top: 8px; }
+  .hist { display: flex; gap: 8px; align-items: baseline; font-size: 11.5px;
+    padding: 3px 0; border-bottom: 1px dashed var(--border); }
+  .hist .t { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 42px; }
+  .hist .v { font-weight: 600; }
+  .hist .v.danger { color: var(--danger); }
+  .hist .v.safe { color: var(--ok); }
+  .hist .d { color: var(--muted); }
+
+  /* the shared TBox editor's chrome, copied from fleet.html — the editor ships no CSS */
+  #ontologyPanel { margin-top: 6px; }
+  #ontologyPanel h2 { margin: 14px 0 6px; }
+  .axiom { display: grid; grid-template-columns: 1fr 72px 24px; gap: 8px;
+    align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--border); }
+  .axtext { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .axval { width: 72px; font: inherit; padding: 2px 6px; border: 1px solid var(--border);
+    border-radius: 4px; }
+  .axfixed { background: var(--bg); color: var(--muted); padding-top: 3px; }
+  .axnone { color: var(--muted); font-size: 11px; text-align: right; padding-right: 4px; }
+  .axdel, .axbtn { border: 1px solid var(--border); background: #fff; cursor: pointer;
+    border-radius: 4px; padding: 2px 8px; font: inherit; font-size: 12px; }
+  .axdel:hover, .axbtn:hover { border-color: var(--accent); color: var(--accent); }
+  .axnote { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+  .axadd { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+  .axadd select, .axadd input { font: inherit; font-size: 12px; padding: 2px 4px;
+    border: 1px solid var(--border); border-radius: 4px; }
+  .axaddlbl { color: var(--muted); font-size: 12px; }
+  .axmsg { color: var(--muted); font-size: 11px; }
+  .ok { color: var(--ok); font-size: 12px; margin: 6px 0; }
+  .bad { color: var(--danger); font-size: 12px; margin: 6px 0; }
+  .warn { color: #a16207; font-size: 12px; margin: 6px 0; }
+  .abox { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+    color: var(--muted); }
+  .abrow { padding: 2px 0; }
+  .axreset { margin-top: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CJet guards the airbase</h1>
+  <p>A horizontal perimeter line divides the picture: the hostile exterior is above it and
+     the airbase below. Four stationary cameras are fixed along the line looking up into the
+     approach; two robots patrol a straight rail just behind it, covering the strip the
+     cameras cannot see. Every 1.2 s the six units' own readings are serialized as flat state
+     and CJet answers one typed question — <em>are there intruders?</em> —
+     <strong>danger</strong>, <strong>not sure</strong> or <strong>safe</strong>. What each
+     of those words means is declared as ontology axioms, not written as an <code>if</code>:
+     a camera that cannot see is not a camera that saw nothing.
+     <a href="/">← back to the main UI</a></p>
+</header>
+
+<main>
+  <section>
+    <div class="panel">
+      <div id="banner" class="banner hidden"></div>
+      <canvas id="sim" width="620" height="460"></canvas>
+      <div class="controls">
+        <button class="primary" id="toggle">start</button>
+        <button id="clear">reset</button>
+        <span class="ctl"><label for="autofault">sensor faults</label>
+          <input type="checkbox" id="autofault" checked></span>
+        <span class="meta" id="status"></span>
+      </div>
+      <div class="controls">
+        <label>inject intrusion</label>
+        <button class="attack" data-lane="96">under cam 1</button>
+        <button class="attack" data-lane="164">between 1–2</button>
+        <button class="attack" data-lane="232">under cam 2</button>
+        <button class="attack" data-lane="300">between 2–3</button>
+        <button class="attack" data-lane="368">under cam 3</button>
+        <button class="attack" data-lane="436">between 3–4</button>
+        <button class="attack" data-lane="504">under cam 4</button>
+        <button class="attack" data-lane="">anywhere</button>
+      </div>
+      <div class="controls">
+        <label>inject as</label>
+        <button class="attack" data-kind="person">person</button>
+        <button class="attack" data-kind="vehicle">vehicle</button>
+        <button data-kind="animal">animal (not a threat)</button>
+        <span class="meta">the injected kind is what a patrol will classify it as</span>
+      </div>
+      <div class="controls">
+        <label>take a unit down</label>
+        <button data-fault="camera_1">cam 1</button>
+        <button data-fault="camera_2">cam 2</button>
+        <button data-fault="camera_3">cam 3</button>
+        <button data-fault="camera_4">cam 4</button>
+        <button data-fault="rail_1">patrol 1</button>
+        <button data-fault="rail_2">patrol 2</button>
+        <button id="repair">repair all</button>
+      </div>
+      <div class="units" id="units"></div>
+      <div class="hud" id="hud"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="panel">
+      <h2>CJet's verdict</h2>
+      <div id="verdict" class="verdict">
+        <div class="headline" id="verdictHeadline">waiting</div>
+        <div class="gold" id="verdictGold"></div>
+        <div class="bars" id="verdictBars"></div>
+        <div class="gatelist" id="verdictGates"></div>
+      </div>
+      <div class="row">
+        <div class="field model">
+          <label class="ctl2" for="model">Model arm</label>
+          <select id="model">
+            <option value="auto">auto — laya router</option>
+            <option value="english">english — laya checkpoint</option>
+            <option value="multilingual">multilingual — laya checkpoint</option>
+            <option value="typed-decisions">typed-decisions — laya checkpoint</option>
+            <option value="ciel_decision_model_v1" selected>ciel_decision_model_v1 — doc head (no airbase training)</option>
+            <option value="ciel_warehouse_v1">ciel_warehouse_v1 — warehouse head</option>
+            <option value="ciel_typed_v1">ciel_typed_v1 — typed head</option>
+            <option value="jev">jev — OpenRouter, slow, costs money</option>
+          </select>
+        </div>
+        <div class="field path">
+          <label class="ctl2" for="path">Decision lab sub-path</label>
+          <select id="path" disabled></select>
+        </div>
+      </div>
+      <div class="meta" id="armNote"></div>
+    </div>
+
+    <div class="panel">
+      <h2>CJet's view — the state it receives</h2>
+      <pre id="stateView">not started yet</pre>
+    </div>
+
+    <div class="panel">
+      <h2>Ontology — the rule behind the verdict</h2>
+      <div id="ontologyPanel"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Decisions</h2>
+      <div id="history"><p class="muted">no decision yet</p></div>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+"use strict";
+
+// Geometry, the six units, the intruder tracks and the state contract live in
+// airbase_sim.js; the verdict rule lives in airbase_ontology.js. Both are pure and
+// DOM-free, so `node --test` drives the shipped code rather than a copy. This file is
+// only the DOM and canvas layer over them.
+import * as S from "./airbase_sim.js";
+import { mountAirbasePanel, permittedFor } from "./airbase_panel.js";
+import { classifyPicture } from "./airbase_ontology.js";
+
+const $ = (id) => document.getElementById(id);
+const canvas = $("sim");
+const ctx = canvas.getContext("2d");
+
+let sim = S.createSim({ seed: 1 });
+let running = false;
+let lastTime = 0;
+let lastPassage = null;
+let lastDecision = null;
+let decideTimer = 0;
+let asking = false;
+let panel = null;
+
+// ---- the model arm dropdown ---------------------------------------------------------
+
+async function loadPaths() {
+  // The service's own sub-path list, so the dropdown cannot drift from what it serves.
+  // Failure is surfaced rather than swallowed: an empty list means the lab arms will
+  // land on the service default, which is a different head than the label claims.
+  try {
+    const response = await fetch("/lab/api/paths");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = await response.json();
+    renderPaths(body.paths || []);
+    $("armNote").textContent =
+      "Sub-paths live from the decision_lab service. A lab arm with no sub-path chosen " +
+      "lands on the service default.";
+  } catch (error) {
+    renderPaths([]);
+    $("armNote").textContent =
+      `decision_lab is not reachable (${error.message}), so sub-paths cannot be listed. ` +
+      "The laya arms still work; a ciel_* arm will fail until the service is up.";
+  }
+  syncPath();
+}
+
+function renderPaths(paths) {
+  const select = $("path");
+  select.innerHTML = "";
+  select.appendChild(new Option("— service default —", ""));
+  for (const p of paths) select.appendChild(new Option(p, p));
+}
+
+function isLabArm() {
+  return $("model").value.startsWith("ciel_");
+}
+
+function syncPath() {
+  const select = $("path");
+  select.disabled = !isLabArm();
+  if (!isLabArm()) select.value = "";
+}
+
+$("model").addEventListener("change", syncPath);
+
+// ---- the decision loop ----------------------------------------------------------------
+
+/**
+ * Decide one picture, in the order the layers are stacked.
+ *
+ * 1. The model reads the state and picks one of the three verdicts.
+ * 2. The ontology computes what this picture PERMITS from the six raw reports.
+ * 3. An answer outside that set is refused and the safest permitted verdict is used —
+ *    visibly, in the decision row, not silently.
+ *
+ * WHY NOT NARROW THE MENU INSTEAD (the warehouse approach). Because on a confirmed
+ * intruder the rule permits exactly one verdict, so a narrowed question would be a
+ * one-option argmax: every arm, every state, confidence 1.000. That measures nothing and
+ * shows nothing. The rule is a veto here rather than a menu, and `S.buildQuestion`
+ * records the reasoning.
+ */
+async function decide() {
+  if (!lastPassage || asking) return;
+  const verdict = permittedFor(lastPassage);
+  const question = S.buildQuestion();
+  const state = S.buildState(lastPassage);
+  $("stateView").textContent = JSON.stringify(state, null, 2);
+
+  asking = true;
+  const startedAt = performance.now();
+  try {
+    const payload = {
+      state,
+      questions: { [S.QUESTION_ID]: question },
+      model: $("model").value,
+    };
+    if (isLabArm() && $("path").value) payload.path = $("path").value;
+    const response = await fetch("/api/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(body?.detail || response.statusText);
+    const answer = body.result.answers[S.QUESTION_ID];
+    // The veto. The model can answer all three; only the permitted ones are enforced.
+    const refused = !verdict.options.includes(answer.choice);
+    const enforced = refused ? S.safestVerdict(verdict.options) : answer.choice;
+    lastDecision = {
+      answer,
+      verdict,
+      refused,
+      enforced,
+      routing: body.routing,
+      latency: body.latency_ms ?? Math.round(performance.now() - startedAt),
+      state,
+    };
+    // THE RESPONSE IS TRIGGERED BY THE DECLARED VERDICT, not by a timer. Delete the
+    // danger-granting axioms in the live editor and the vehicle stops being sent — which is
+    // the point of declaring the rule instead of writing an `if` here. `intercept()` is
+    // idempotent while a run is in progress, so calling it every decision is safe.
+    lastDecision.intercepted = enforced === S.VERDICT.DANGER ? S.intercept(sim) : null;
+    renderVerdict();
+    record();
+  } catch (error) {
+    lastDecision = {
+      answer: null,
+      verdict,
+      refused: false,
+      enforced: null,
+      error: error.message,
+      latency: Math.round(performance.now() - startedAt),
+      state,
+    };
+    renderVerdict();
+  } finally {
+    asking = false;
+  }
+}
+
+// ---- rendering ------------------------------------------------------------------------
+
+function verdictClass(v) {
+  return v === "danger" ? "danger" : v === "not sure" ? "notsure" : "";
+}
+
+function renderVerdict() {
+  const decision = lastDecision;
+  if (!decision) return;
+  const { answer, verdict, refused, enforced, error } = decision;
+
+  const headline = $("verdictHeadline");
+  const card = $("verdict");
+  card.className = "verdict";
+
+  if (error) {
+    headline.textContent = "could not decide";
+    headline.style.color = "var(--danger)";
+    $("verdictGold").textContent = error;
+    $("verdictBars").innerHTML = "";
+  } else {
+    // The headline is what is ENFORCED, not what the model said. A refused answer is
+    // named underneath rather than promoted to the verdict.
+    headline.textContent = `${enforced.toUpperCase()}` +
+      (refused ? ` — "${answer.choice}" refused` : "");
+    headline.style.color = "";
+    card.className = `verdict ${verdictClass(enforced)}`;
+    $("verdictGold").textContent =
+      `model said ${answer.choice} (${(answer.confidence * 100).toFixed(0)}%) · ` +
+      `the rule permits ${verdict.options.join(" / ")}` +
+      (refused ? ` · refused, held on "${enforced}"` : "");
+    renderBars(verdict.options, answer, refused);
+  }
+
+  // Where the permitted set came from: the applied withdrawals, in the ontology's words.
+  const applied = verdict.applied.map(a => `${a.axiom} withdrew "${a.removed}"`);
+  const v = verdict.violations.map(x => `⚠ ${x.axiom}: ${x.detail}`);
+  const u = verdict.unasserted.map(x => `not asserted: ${x}`);
+  const lines = [...applied, ...v, ...u];
+  $("verdictGates").innerHTML = lines.length
+    ? lines.map(t => `<div>${t}</div>`).join("")
+    : '<div>no rule fired — every unit is online and nothing was seen, so the whole ' +
+      'vocabulary is permitted</div>';
+}
+
+function renderBars(permitted, answer, refused) {
+  const host = $("verdictBars");
+  host.innerHTML = "";
+  const probabilities = answer.probabilities || {};
+  for (const verdict of S.VERDICT_ORDER) {
+    const allowed = permitted.includes(verdict);
+    const prob = Number(probabilities[verdict] ?? 0);
+    const isChoice = answer.choice === verdict;
+    const row = document.createElement("div");
+    row.className = `bar ${verdictClass(verdict)}` +
+      (isChoice && !refused ? " winner" : "") +
+      (isChoice && refused ? " refused" : "");
+    row.innerHTML =
+      `<span class="bar-label">${verdict}${allowed ? "" : " (forbidden)"}</span>` +
+      `<span class="bar-track"><span class="bar-fill" style="width:${Math.round(prob * 100)}%"></span></span>` +
+      `<span class="bar-pct">${(prob * 100).toFixed(0)}%</span>`;
+    host.appendChild(row);
+  }
+}
+
+function suggest(verdict) {
+  return verdict === "danger" ? "escalate and intercept"
+    : verdict === "not sure" ? "hold and task a patrol to sweep the blind sector"
+      : "log and continue";
+}
+
+function record() {
+  const decision = lastDecision;
+  if (!decision) return;
+  const history = $("history");
+  const empty = history.querySelector("p.muted");
+  if (empty) empty.remove();
+  const row = document.createElement("div");
+  row.className = "hist";
+  const choice = decision.error ? "error" : decision.enforced;
+  const stamped = (sim.clock / 1000).toFixed(1);
+  row.innerHTML = `<span class="t">${stamped}s</span>` +
+    `<span class="v ${verdictClass(choice)}">${choice}</span>` +
+    `<span class="d">${decision.error ? decision.error
+      : `${(decision.answer.confidence * 100).toFixed(0)}% · ${decision.latency} ms · ` +
+        `model ${decision.answer.choice}` +
+        `${decision.refused ? " (REFUSED by the rule)" : ""}` +
+        `${decision.intercepted ? " · interceptor dispatched" : ""}` +
+        ` · would ${suggest(choice)}`}</span>`;
+  history.prepend(row);
+  while (history.children.length > 40) history.removeChild(history.lastChild);
+}
+
+/**
+ * The six chips.
+ *
+ * Read from the SAME passage the decision saw when there is one, so a chip can never
+ * disagree with the state printed beside it. When the sim is running they are 1.2 s
+ * stale by design — that is the age of the last decision, not a second opinion.
+ */
+function renderUnits() {
+  const host = $("units");
+  host.innerHTML = "";
+  const reports = lastPassage ? lastPassage.reports : S.sensorReports(sim);
+  for (const report of reports) {
+    const node = document.createElement("div");
+    node.className = "unit" +
+      (report.contact ? " contact" : "") +
+      (report.status === "offline" ? " offline"
+        : report.status === "degraded" ? " degraded" : "");
+    const reading = report.status === "offline" ? "no reading"
+      : report.contact
+        ? (report.classified ? `contact · ${report.classified}` : "contact")
+        : "clear";
+    node.innerHTML = `<div class="name">${report.label}</div>` +
+      `<div class="state">${report.status} · ${reading}</div>`;
+    host.appendChild(node);
+  }
+}
+
+function renderHud() {
+  const c = S.counters(sim);
+  const truth = S.truthFor(sim);
+  const facts = lastPassage ? classifyPicture(lastPassage) : null;
+  $("hud").innerHTML = [
+    `t <strong>${(sim.clock / 1000).toFixed(0)} s</strong>`,
+    `intrusions <strong>${c.spawned}</strong>`,
+    `contacts <strong>${c.contacts}</strong>`,
+    `above the wire <strong>${truth.exterior}</strong>`,
+    `at the wall <strong>${truth.atWall}</strong>`,
+    `crossed unseen <strong>${c.unseenInside}</strong>`,
+    `intercepted <strong>${c.intercepted}</strong>`,
+    `searchlight <strong>${sim.tower.on ? "ON" : "off"}</strong>`,
+    `blind <strong>${facts ? facts.blindUnits.length : 0}</strong>`,
+    `degraded <strong>${facts ? facts.degradedUnits.length : 0}</strong>`,
+  ].join(" · ");
+}
+
+// ---- drawing --------------------------------------------------------------------------
+//
+// The canvas is one horizontal division: hostile exterior above the wire, airbase below.
+// Everything is drawn from that line, and the camera wedges are drawn as wedges rather
+// than as cones of light so the GAPS between them are the visible subject.
+
+/**
+ * Diagonal hatching inside a rect, clipped — cheap texture so a filled block reads as
+ * concrete rather than as a coloured band.
+ */
+function hatching(x, y, w, h) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.10)";
+  ctx.lineWidth = 1;
+  for (let i = -h; i < w + h; i += 9) {
+    ctx.beginPath();
+    ctx.moveTo(x + i, y);
+    ctx.lineTo(x + i - h, y + h);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, S.W, S.H);
+
+  // the exterior: open, unlit ground the intruders cross
+  ctx.fillStyle = "#070d16";
+  ctx.fillRect(0, 0, S.W, S.FENCE_Y);
+
+  // the airbase side
+  ctx.fillStyle = "#101b2b";
+  ctx.fillRect(0, S.FENCE_Y, S.W, S.H - S.FENCE_Y);
+
+  // ---- THE WALL
+  //
+  // The four cameras are mounted ON the wall, not on the rail: the wall is the fixed
+  // structure, the rail is a separate track further inside that the patrols ride. Drawn as
+  // a solid wall with a cap and buttress blocks so the distinction is structural rather
+  // than two lines that happen to be parallel.
+  const wallTop = S.FENCE_Y - S.WALL_HEIGHT / 2;
+  ctx.fillStyle = "#2a3a4f";
+  ctx.fillRect(S.FENCE_X0, wallTop, S.FENCE_X1 - S.FENCE_X0, S.WALL_HEIGHT);
+  hatching(S.FENCE_X0, wallTop, S.FENCE_X1 - S.FENCE_X0, S.WALL_HEIGHT);
+  // cap, so the wall reads as a built thing with a top surface
+  ctx.fillStyle = "#6b7f96";
+  ctx.fillRect(S.FENCE_X0, wallTop - 3, S.FENCE_X1 - S.FENCE_X0, 3);
+  ctx.strokeStyle = "#8497ad";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(S.FENCE_X0, wallTop, S.FENCE_X1 - S.FENCE_X0, S.WALL_HEIGHT);
+  // buttresses along its length
+  ctx.fillStyle = "#3d5068";
+  for (let x = S.FENCE_X0 + 20; x <= S.FENCE_X1; x += 62) {
+    ctx.fillRect(x, wallTop + S.WALL_HEIGHT - 9, 7, 9);
+  }
+
+  // ---- the rail, a separate track further inside the base
+  ctx.strokeStyle = "#141f2e";
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(S.RAIL_X0, S.RAIL_Y);
+  ctx.lineTo(S.RAIL_X1, S.RAIL_Y);
+  ctx.stroke();
+  // sleepers, so it reads as track and cannot be mistaken for the wall
+  ctx.strokeStyle = "#2b3b50";
+  ctx.lineWidth = 2;
+  for (let x = S.RAIL_X0 + 6; x <= S.RAIL_X1; x += 16) {
+    ctx.beginPath();
+    ctx.moveTo(x, S.RAIL_Y - 5);
+    ctx.lineTo(x, S.RAIL_Y + 5);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "#64748b";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 6]);
+  ctx.beginPath();
+  ctx.moveTo(S.RAIL_X0, S.RAIL_Y);
+  ctx.lineTo(S.RAIL_X1, S.RAIL_Y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ---- labels for the two halves of the world
+  ctx.font = "10px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#3f4a5c";
+  ctx.fillText("EXTERIOR — approach", 12, 16);
+  ctx.fillStyle = "#475569";
+  ctx.fillText("AIRBASE", 12, S.FENCE_Y + S.WALL_HEIGHT / 2 + 3);
+
+  for (const cfg of S.SENSORS) {
+    const sensor = sim.sensors[cfg.id];
+    if (cfg.kind === "camera") drawCamera(cfg, sensor);
+    else drawPatrol(cfg, sensor);
+  }
+
+  for (const intruder of sim.intruders) drawIntruder(intruder);
+  drawTower();
+  drawInterceptor(sim.interceptor);
+
+  // camera labels sit just below the wall so they never sit inside a wedge
+  ctx.font = "9.5px sans-serif";
+  ctx.textAlign = "center";
+  for (const cfg of S.SENSORS) {
+    if (cfg.kind !== "camera") continue;
+    ctx.fillStyle = sim.sensors[cfg.id].status === "offline" ? "#64748b" : "#94a3b8";
+    ctx.fillText(cfg.label, cfg.x, S.FENCE_Y + S.WALL_HEIGHT / 2 + 13);
+  }
+}
+
+/**
+ * A camera: a wedge anchored on the wire, aimed up.
+ *
+ * Drawn as an actual triangle rather than an arc so the coverage boundary is exact — the
+ * same `cameraSees` predicate decides both what is drawn and what is seen. A wedge drawn
+ * with a fat stroke would claim coverage the predicate does not give it, which is the one
+ * mistake this page cannot afford.
+ */
+function drawCamera(cfg, sensor) {
+  const online = sensor.status !== "offline";
+  const span = S.CAMERA_RANGE;
+  const wing = Math.tan(S.CAMERA_HALF_FOV) * span;
+  const colour = sensor.status === "offline" ? "#475569"
+    : sensor.status === "degraded" ? "#b45309" : "#22d3ee";
+
+  ctx.beginPath();
+  ctx.moveTo(cfg.x, cfg.y);
+  ctx.lineTo(cfg.x - wing, cfg.y - span);
+  ctx.lineTo(cfg.x + wing, cfg.y - span);
+  ctx.closePath();
+  ctx.fillStyle = online ? "rgba(34, 211, 238, 0.075)" : "rgba(71, 85, 105, 0.14)";
+  ctx.fill();
+  if (online) {
+    ctx.strokeStyle = sensor.status === "degraded"
+      ? "rgba(180, 83, 9, 0.55)" : "rgba(34, 211, 238, 0.32)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash(sensor.status === "degraded" ? [4, 4] : []);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // the housing: a small block on the line
+  ctx.fillStyle = "#1e293b";
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 1.5;
+  ctx.fillRect(cfg.x - S.CAMERA_WID / 2, cfg.y - S.CAMERA_LEN, S.CAMERA_WID, S.CAMERA_LEN);
+  ctx.strokeRect(cfg.x - S.CAMERA_WID / 2, cfg.y - S.CAMERA_LEN, S.CAMERA_WID, S.CAMERA_LEN);
+
+  if (sensor.status === "offline") {
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cfg.x - 9, cfg.y - 13); ctx.lineTo(cfg.x + 9, cfg.y + 5);
+    ctx.moveTo(cfg.x + 9, cfg.y - 13); ctx.lineTo(cfg.x - 9, cfg.y + 5);
+    ctx.stroke();
+  } else if (sim.clock - sensor.lastContactAt <= S.CONTACT_WINDOW_MS) {
+    ctx.strokeStyle = "#f87171";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cfg.x, cfg.y, 14 + 5 * Math.sin(sim.clock / 160), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function drawPatrol(cfg, sensor) {
+  const robot = sim.robots.find(r => r.id === cfg.id);
+  const online = sensor.status !== "offline";
+  const colour = sensor.status === "offline" ? "#475569"
+    : sensor.status === "degraded" ? "#b45309" : "#34d399";
+
+  // perception radius, clipped to the base side: a patrol on the rail cannot see into the
+  // exterior any more than a camera can see behind the wire.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, S.FENCE_Y, S.W, S.H - S.FENCE_Y);
+  ctx.clip();
+  ctx.beginPath();
+  ctx.arc(robot.x, S.RAIL_Y, S.RAIL_RANGE, 0, Math.PI * 2);
+  ctx.fillStyle = online ? "rgba(52, 211, 153, 0.06)" : "rgba(71, 85, 105, 0.10)";
+  ctx.fill();
+  if (online) {
+    ctx.strokeStyle = "rgba(52, 211, 153, 0.22)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  if (online) {
+    ctx.beginPath();
+    ctx.arc(robot.x, S.RAIL_Y, S.CLASSIFY_RANGE, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(52, 211, 153, 0.12)";
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.fillStyle = "#0f172a";
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(robot.x, S.RAIL_Y, S.ROBOT_R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = colour;
+  ctx.beginPath();
+  ctx.arc(robot.x + robot.dir * 4, S.RAIL_Y, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (sensor.status === "offline") {
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(robot.x - 12, S.RAIL_Y - 12); ctx.lineTo(robot.x + 12, S.RAIL_Y + 12);
+    ctx.moveTo(robot.x + 12, S.RAIL_Y - 12); ctx.lineTo(robot.x - 12, S.RAIL_Y + 12);
+    ctx.stroke();
+  }
+
+  ctx.font = "9.5px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = colour;
+  ctx.fillText(cfg.label, robot.x, S.RAIL_Y + 26);
+}
+
+/**
+ * The searchlight tower, and the beam when it is lit.
+ *
+ * The beam is drawn BEFORE the tower so the housing sits on top of its own light. It is a
+ * soft additive wash rather than a hard triangle: a searchlight is a light, and drawing it
+ * as a crisp polygon would read as a seventh camera wedge — which is the one thing it is
+ * not. The cameras are sensors; this is a response.
+ */
+function drawTower() {
+  const tower = sim.tower;
+  const cx = S.TOWER.x;
+  const lampY = S.TOWER.y - S.TOWER.height;
+
+  if (tower.on) {
+    // warm-up over ~180 ms, so switching on reads as a lamp rather than a paint fill
+    const warm = Math.min(1, (sim.clock - tower.since) / 180);
+    // The beam is an aimed wedge: it points where `tower.aim` points, which is at the
+    // track. Drawn from the same angle the `litByTower` predicate tests, so the light on
+    // screen and the light the patrols use are one thing.
+    const tipX = cx + Math.cos(tower.aim) * S.TOWER_BEAM_RANGE;
+    const tipY = lampY + Math.sin(tower.aim) * S.TOWER_BEAM_RANGE;
+    const leftAngle = tower.aim - S.TOWER_BEAM_HALF_FOV;
+    const rightAngle = tower.aim + S.TOWER_BEAM_HALF_FOV;
+    // Strong enough to read over the camera wedges it crosses: at 0.40 the beam was
+    // invisible inside a wedge, which is precisely where a track at the wall sits.
+    const grad = ctx.createRadialGradient(cx, lampY, 4, cx, lampY, S.TOWER_BEAM_RANGE);
+    grad.addColorStop(0, `rgba(255, 252, 214, ${0.85 * warm})`);
+    grad.addColorStop(0.45, `rgba(253, 236, 150, ${0.34 * warm})`);
+    grad.addColorStop(1, "rgba(253, 230, 138, 0)");
+    ctx.beginPath();
+    ctx.moveTo(cx, lampY);
+    ctx.lineTo(cx + Math.cos(leftAngle) * S.TOWER_BEAM_RANGE,
+               lampY + Math.sin(leftAngle) * S.TOWER_BEAM_RANGE);
+    ctx.lineTo(cx + Math.cos(rightAngle) * S.TOWER_BEAM_RANGE,
+               lampY + Math.sin(rightAngle) * S.TOWER_BEAM_RANGE);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+    // the hotspot where the beam lands
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, 20, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 252, 214, ${0.30 * warm})`;
+    ctx.fill();
+  }
+
+  // the mast
+  ctx.strokeStyle = "#64748b";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, S.TOWER.y);
+  ctx.lineTo(cx, lampY);
+  ctx.stroke();
+  // the base
+  ctx.fillStyle = "#334155";
+  ctx.fillRect(cx - S.TOWER.baseW / 2, S.TOWER.y - S.TOWER.baseH,
+    S.TOWER.baseW, S.TOWER.baseH);
+
+  // the lamp: lit or dark
+  ctx.beginPath();
+  ctx.arc(cx, lampY, 4.5, 0, Math.PI * 2);
+  ctx.fillStyle = tower.on ? "#fef9c3" : "#475569";
+  ctx.fill();
+  ctx.strokeStyle = tower.on ? "#fde68a" : "#94a3b8";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  if (tower.on) {
+    ctx.beginPath();
+    ctx.arc(cx, lampY, 8 + 2 * Math.sin(sim.clock / 220), 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(253, 230, 138, 0.45)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+/**
+ * The interceptor vehicle.
+ *
+ * Drawn at the depot while idle so the page shows where the response comes from rather
+ * than having it appear from nowhere the first time the rule says danger.
+ */
+function drawInterceptor(vehicle) {
+  const y = S.INTERCEPT_Y;
+  const active = vehicle.phase !== "idle";
+  ctx.fillStyle = active ? "#1d4ed8" : "#1e293b";
+  ctx.strokeStyle = active ? "#93c5fd" : "#475569";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(vehicle.x - 11, y + 5);
+  ctx.lineTo(vehicle.x - 11, y - 3);
+  ctx.lineTo(vehicle.x + 3, y - 3);
+  ctx.lineTo(vehicle.x + 11, y + 1);
+  ctx.lineTo(vehicle.x + 11, y + 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // wheels
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.fillRect(vehicle.x - 7, y + 5, 4, 3);
+  ctx.fillRect(vehicle.x + 4, y + 5, 4, 3);
+  if (active) {
+    ctx.fillStyle = "#bfdbfe";
+    ctx.beginPath();
+    ctx.arc(vehicle.x + 8, y - 1, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawIntruder(intruder) {
+  const atWall = intruder.phase === "at-wall" || intruder.phase === "frozen";
+  // A frozen intruder is dimmed and ringed: it is held, not gone, and the page has to show
+  // the difference between "the response is working" and "it left on its own".
+  const frozen = intruder.phase === "frozen";
+  // AN ANIMAL IS NOT A THREAT, and it is drawn as one: different colour, smaller, no
+  // alarm ring. The page would be lying if a fox looked like an intruder while the verdict
+  // beside it said `safe`.
+  const threat = S.isThreat(intruder.kind);
+  const animal = intruder.kind === "animal";
+  ctx.fillStyle = frozen ? "#7f1d1d"
+    : animal ? "#a3e635"
+      : intruder.kind === "vehicle" ? "#f97316" : "#ef4444";
+  ctx.strokeStyle = animal ? "#ecfccb" : "#fee2e2";
+  ctx.lineWidth = 1;
+  if (intruder.kind === "vehicle") {
+    ctx.fillRect(intruder.x - 7, intruder.y - 4, 14, 8);
+    ctx.strokeRect(intruder.x - 7, intruder.y - 4, 14, 8);
+  } else {
+    ctx.beginPath();
+    ctx.arc(intruder.x, intruder.y, animal ? S.INTRUDER_R - 1.5 : S.INTRUDER_R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  // a ring once it is at the wall, so "stopped by the wall" is legible without the HUD —
+  // red for a threat, green for an animal that is merely there
+  if (atWall) {
+    ctx.strokeStyle = frozen ? "rgba(147, 197, 253, 0.85)"
+      : threat ? "rgba(239, 68, 68, 0.6)" : "rgba(163, 230, 53, 0.55)";
+    ctx.lineWidth = frozen ? 2 : 1;
+    ctx.beginPath();
+    ctx.arc(intruder.x, intruder.y, 11 + 3 * Math.sin(sim.clock / 130), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (frozen) {
+    ctx.font = "9px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#bfdbfe";
+    ctx.fillText("HELD", intruder.x, intruder.y + 20);
+  }
+}
+
+// ---- the loop -------------------------------------------------------------------------
+
+function frame(now) {
+  const dt = Math.min(64, now - (lastTime || now));
+  lastTime = now;
+  if (running) {
+    S.step(sim, dt);
+    lastPassage = S.buildPassage(sim);
+    decideTimer += dt;
+    if (decideTimer >= S.DECIDE_INTERVAL_MS) {
+      decideTimer = 0;
+      decide();
+      // The chips are refreshed with the decision, not every frame: they describe the
+      // picture the verdict was made from, and repainting them between decisions would
+      // let them drift ahead of the state above them.
+      renderUnits();
+    }
+    renderHud();
+  }
+  draw();
+  requestAnimationFrame(frame);
+}
+
+// ---- controls ---------------------------------------------------------------------------
+
+$("toggle").addEventListener("click", () => {
+  running = !running;
+  $("toggle").textContent = running ? "pause" : "start";
+  $("status").textContent = running ? "watching" : "paused";
+  if (running) {
+    lastTime = 0;
+    lastPassage = S.buildPassage(sim);
+    decideTimer = S.DECIDE_INTERVAL_MS;   // decide on the first frame, not 1.2 s later
+  }
+});
+
+$("clear").addEventListener("click", () => {
+  sim = S.createSim({ seed: 1 });
+  running = false;
+  lastTime = 0;
+  decideTimer = 0;
+  lastDecision = null;
+  lastPassage = null;
+  $("toggle").textContent = "start";
+  $("status").textContent = "reset";
+  hideBanner();
+  $("history").innerHTML = '<p class="muted">no decision yet</p>';
+  $("stateView").textContent = "not started yet";
+  $("verdictHeadline").textContent = "waiting";
+  $("verdictHeadline").style.color = "";
+  $("verdict").className = "verdict";
+  $("verdictGold").textContent = "";
+  $("verdictBars").innerHTML = "";
+  $("verdictGates").innerHTML = "";
+  renderUnits();
+  renderHud();
+});
+
+// Automatic faults are a toggle, not a hidden default: a demo that silently blinds a
+// camera would look like a bug in the model rather than a designed scenario.
+$("autofault").addEventListener("change", () => {
+  sim.config.faults = $("autofault").checked;
+});
+
+// What the next injected track is. A person or a vehicle is a threat; an animal is a
+// motion that is not an intrusion, and it is the only way to see the demo say `safe` on a
+// picture that had a contact.
+let nextKind = null;
+
+for (const button of document.querySelectorAll("button[data-kind]")) {
+  button.addEventListener("click", () => {
+    nextKind = button.dataset.kind;
+    for (const other of document.querySelectorAll("button[data-kind]")) {
+      other.classList.toggle("primary", other === button);
+    }
+    $("status").textContent = `the next injected track will be a ${nextKind}`;
+  });
+}
+
+for (const button of document.querySelectorAll("button[data-lane]")) {
+  button.addEventListener("click", () => {
+    const lane = button.dataset.lane === "" ? null : Number(button.dataset.lane);
+    const intruder = S.spawnIntruder(sim, lane, nextKind);
+    if (!intruder) {
+      $("status").textContent =
+        `at capacity — ${S.MAX_INTRUDERS} tracks already on the map`;
+      return;
+    }
+    const seen = S.coveredByCameras(intruder.x, S.FENCE_Y - S.INTRUDER_STOP_OFFSET);
+    $("status").textContent =
+      `track ${intruder.id} (${intruder.kind}) at x=${Math.round(intruder.x)}` +
+      (seen ? " — inside a camera wedge" : " — in a gap between wedges");
+  });
+}
+
+for (const button of document.querySelectorAll("button[data-fault]")) {
+  button.addEventListener("click", () => {
+    S.faultSensor(sim, button.dataset.fault);
+    const sensor = sim.sensors[button.dataset.fault];
+    $("status").textContent = `${button.dataset.fault} is now ${sensor.status}`;
+  });
+}
+
+$("repair").addEventListener("click", () => {
+  S.repairSensors(sim);
+  $("status").textContent = "all six units online";
+});
+
+function banner(text, kind) {
+  const node = $("banner");
+  node.textContent = text;
+  node.className = `banner ${kind}`;
+}
+function hideBanner() { $("banner").className = "banner hidden"; }
+
+// ---- the ontology panel ----------------------------------------------------------------
+
+// Reads the last passage, so the permitted set is shown as the ontology computes it, and
+// editing the TBox changes what the next decision may be called. No enforcement switch:
+// the rule withdrawing a verdict IS the behaviour change.
+panel = mountAirbasePanel({
+  root: $("ontologyPanel"),
+  getSim: () => lastPassage,
+  onChange: () => { panel?.rerender(); },
+});
+setInterval(() => panel?.refreshABox(), 500);
+setInterval(() => {
+  if ($("ontologyPanel").contains(document.activeElement)) return;
+  panel?.rerender();
+}, 500);
+
+renderUnits();
+renderHud();
+loadPaths();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

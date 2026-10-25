@@ -409,6 +409,47 @@ def test_ciel_routing_reports_the_sub_path_that_answered(client, ciel_stub):
         assert body["routing"]["path"] == expected
 
 
+def test_ciel_forwards_an_explicit_path(client, ciel_stub):
+    """A page that picked a head from the service's own `/api/paths` list sends `path`
+    directly rather than a model name. It must reach ciel.predict and be reported back,
+    or the page would label a sub-path that did not answer."""
+    test_client, _ = client
+    body = test_client.post("/api/predict", json={
+        "state": {"body": "hi"},
+        "questions": {"assign": VALID_CHOICE},
+        "model": "ciel_decision_model_v1",
+        "path": "warehouse",
+    }).json()
+    assert ciel_stub[0]["path"] == "warehouse"
+    assert body["routing"]["path"] == "warehouse"
+
+
+def test_an_explicit_path_outranks_the_model_mapping(client, ciel_stub):
+    """Both cannot be meant at once; the caller that sent both asked for this head."""
+    test_client, _ = client
+    body = test_client.post("/api/predict", json={
+        "state": {"body": "hi"},
+        "questions": {"assign": VALID_CHOICE},
+        "model": "ciel_typed_v1",
+        "path": "warehouse",
+    }).json()
+    assert body["routing"]["path"] == "warehouse"
+
+
+def test_a_laya_arm_ignores_path_rather_than_rejecting_it(client, ciel_stub):
+    """The airbase page has one dropdown pair for every arm, so it keeps sending `path`
+    after the user switches to a laya checkpoint. A 422 there would break the page."""
+    test_client, _ = client
+    response = test_client.post("/api/predict", json={
+        "state": {"body": "hi"},
+        "questions": {"assign": VALID_CHOICE},
+        "model": "auto",
+        "path": "warehouse",
+    })
+    assert response.status_code == 200
+    assert not ciel_stub, "a laya arm must not reach the ciel client"
+
+
 def test_ciel_answer_shapes_match_laya(client, ciel_stub):
     """choice/score/noul answers use laya's per-type fields, not a uniform shape."""
     test_client, _ = client
@@ -959,6 +1000,23 @@ def test_the_index_links_the_traffic_page():
     response = TestClient(server_module.app).get("/")
     assert response.status_code == 200
     assert "traffic.html" in response.text
+
+
+def test_airbase_page_served():
+    """Same catch-all mount as every other page: dropping it from static/ would otherwise
+    only show up in a browser."""
+    response = TestClient(server_module.app).get("/airbase.html")
+    assert response.status_code == 200, response.text
+    assert "CJet guards the airbase" in response.text
+    # It must load the pure modules the node tests drive, not an inlined copy.
+    assert "/airbase_sim.js" in response.text
+    # The panel is imported, not the ontology directly, so a page that dropped the editor
+    # would stop mounting the TBox and nothing else would notice.
+    assert "/airbase_panel.js" in response.text
+
+
+def test_the_index_links_the_airbase_page():
+    assert "airbase.html" in TestClient(server_module.app).get("/").text
 
 
 def test_the_scan_route_is_not_shadowed_by_the_static_mount():

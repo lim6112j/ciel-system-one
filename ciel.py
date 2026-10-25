@@ -58,12 +58,22 @@ MODEL_PATHS = {
 }
 
 
-def resolve_path(model: str | None = None) -> str | None:
-    """Sub-path for this call: explicit model mapping, then env, then None.
+def resolve_path(model: str | None = None, path: str | None = None) -> str | None:
+    """Sub-path for this call: explicit path, then model mapping, then env, then None.
 
     None means "let the service use web.default_path" — the behaviour every
     existing caller got, so nothing that ran before this needs to change.
+
+    `path` is what a page passes when the user picked the head directly rather than
+    through a model name (traffic.html and airbase.html both offer the service's own
+    `/api/paths` list). It outranks the model mapping because the two cannot both be
+    meant: the caller that sends both asked for a specific head. It is NOT validated
+    here — the service 400s an unknown path, and `guard_pii.lab_paths` is the reader
+    that knows which ones exist.
     """
+    explicit = (path or "").strip()
+    if explicit:
+        return explicit
     if model and model in MODEL_PATHS:
         return MODEL_PATHS[model]
     path = os.environ.get(PATH_ENV, "").strip()
@@ -218,6 +228,7 @@ def predict(
     questions: Mapping[str, Dict[str, Any]],
     timeout: float = DEFAULT_TIMEOUT,
     model: str | None = None,
+    path: str | None = None,
 ) -> Dict[str, Any]:
     """Ask the decision_lab service, and return laya's result envelope.
 
@@ -225,6 +236,8 @@ def predict(
         model: the caller's model override. It is not sent upstream (the
             service has no such field) but it selects the sub-path, so a
             caller that asked for a problem-specific head gets it.
+        path: an explicit sub-path, for a caller that picked the head from
+            the service's own `/api/paths` list instead of naming a model.
 
     Returns:
         {"model", "provider", "answers", "usage"} — the same shape
@@ -235,9 +248,9 @@ def predict(
         "custom_text": _state_to_custom_text(state),
         "questions": lab_questions,
     }
-    path = resolve_path(model)
-    if path is not None:
-        payload["path"] = path
+    resolved = resolve_path(model, path)
+    if resolved is not None:
+        payload["path"] = resolved
     request = urllib.request.Request(
         base_url() + DECIDE_PATH,
         data=json.dumps(payload).encode("utf-8"),
