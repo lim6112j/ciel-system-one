@@ -98,6 +98,9 @@ a `ciel_*` request with no sub-path silently lands on the service's default
 - `test_penguin_sim.mjs` / `test_penguin_commands.mjs` — the penguin's world rules and the
   transcript→command mapping, no model load:
   `node --test test_penguin_sim.mjs test_penguin_commands.mjs`
+- `test_airbase_sim.mjs` / `test_airbase_ontology.mjs` — the airbase perimeter: the line
+  geometry and its coverage gaps, the state contract, and the verdict rule's divergence
+  harness, no model load: `node --test test_airbase_sim.mjs test_airbase_ontology.mjs`
 - `asr.py` — local speech recognition (Moonshine tiny) for the penguin demo; `test_asr.py`
   covers WAV decoding and the offline-flag handling, no model load:
   `uv run python -m pytest test_asr.py`
@@ -1828,6 +1831,193 @@ the service is down. `guard_pii.py` adds `127.0.0.1` and `localhost` to `no_prox
 its own process on import. That is deliberately *not* a change to `ciel.py`: on a
 machine with no proxy configured, `ciel.py` is correct as written, and a shared
 client should not carry one machine's network environment.
+
+## The airbase — six sensors, one typed question, a rule that is a veto
+
+`static/airbase.html` is a perimeter watch. A horizontal line divides the picture: the
+hostile **exterior above**, the **airbase below**. Four stationary cameras are fixed along
+that line looking up into the approach, and two robots patrol a straight rail just behind
+it. Every 1.2 s the six units' own readings are serialized as flat state and CJet answers
+one typed question — `intruders: choice(danger / not sure / safe)`.
+
+```sh
+uv run python -m uvicorn server:app --port 8001   # decision_lab holds 8000
+# then open http://localhost:8001/airbase.html
+```
+
+Modules: `airbase_sim.js` (the line geometry, the six units, the intruder tracks, the state
+contract), `airbase_ontology.js` (the verdict rule and the divergence harness),
+`airbase_panel.js` (the live TBox editor adapter), `airbase.html` (the DOM layer), and
+`eval_airbase.mjs` (the measurement harness).
+
+### The geometry is the demo, so it is measured
+
+Up close, a camera's wedge is only a few pixels wide. Four evenly spaced cameras therefore
+leave **real gaps low down** even though their sectors overlap at range — an intruder can be
+inside the wire and invisible because no wedge contains that point, not because a random
+roll said so. `test_airbase_sim.mjs` counts the uncovered columns and fails if the wedges
+ever merge into full coverage; the sim counts `crossed unseen` in the HUD for the same
+reason. The cameras look **up only** and the patrols cover the strip **behind the wall**,
+so the two layers have different jobs rather than duplicated ones.
+
+### The wall is a barrier, the rail is where the patrols ride
+
+The four cameras are mounted on a **wall** — the fixed structure separating the exterior
+from the base. The **rail** is a separate track further inside, and only the patrols ride it.
+An intruder walks down from the top edge and is **stopped by the wall**: it never reaches the
+rail and never wanders the base. It stands there for **three minutes**, then gives up and
+walks back out.
+
+Three minutes is the demo's pacing, not an accident — long enough to watch the verdict and
+the interceptor resolve, short enough that a visitor sees a full cycle. Because the loiter
+outlasts any spawn spacing, the automatic stream admits **one intruder to the wall at a
+time**: with a 3-minute dwell, any fixed gap puts several there together, and four identical
+`danger` tracks at one wall is a crowd rather than a watch. A test asserts the occupancy
+never exceeds one across 24 simulated minutes and three seeds. Manual spawn buttons bypass
+that cap — a button press is the viewer asking for a second one.
+
+### Person and vehicle are threats; an animal is not
+
+The patrol's close-range classification is what makes the demo *discriminate* rather than
+only escalate. `THREAT_KINDS` is `person` and `vehicle`; `animal` is a motion that is not an
+intrusion. Two consequences:
+
+- An **identified animal** files as `NoContact`, not as an unresolved contact. That is the
+  one rule that can resolve a picture in the *clearing* direction — without it the demo
+  only ever shows escalation, never a correct `safe` on a picture that had sensor hits.
+- Animal identification **outranks camera corroboration**. Two cameras agreeing establishes
+  that something is there; the patrol establishes what it is. A fox seen by two cameras and
+  named by a patrol is resolved, not dangerous.
+
+The state says so in words the model can read: `"contact (animal, not a threat)"`, and
+`patrol_classification: "animal by rail patrol 1, not a threat"`.
+
+**Identification requires the searchlight.** A patrol can only name what it can see, so a
+classification needs `sim.tower.on`. That is what gives the tower a job beyond decoration.
+
+### The searchlight tower
+
+A tower in the middle of the lower airbase. It is a **response, not a sensor**: it adds
+nothing to the six units' reports and is not in the state the model reads.
+
+**The beam aims at the track.** `tower.aim` is the direction the lamp points and
+`litTargetId` names what it is following; `litByTower()` is a wedge test anchored at the
+lamp and aimed by that angle, the same test the cameras use. It is not a flag, and the
+difference matters: a track the beam has not reached yet is genuinely unclassifiable, so it
+stays `contact (unclassified)` until the light arrives.
+
+It turns on when a track reaches the wall — including an animal — and **goes out the instant
+that track leaves the map**, whether it walked away or the interceptor took it. Deriving
+`on` from the intruders each tick rather than from an explicit `lightOn()` call means it
+cannot be left burning after a page stops stepping, and it cannot be lit by a rule the
+ontology no longer declares. A test traces the cycle: on at the wall, off at removal, on
+again only when the next track arrives.
+
+Two constants were sized from failures, not by eye:
+
+- **Beam range 290 px.** At 210 the wall ends were 238 px from the lamp and permanently
+  unlit — and since identification requires the light, permanently unclassifiable.
+- **Classify range 110 px.** At 62 a patrol could only name a track on the few frames it
+  happened to be almost directly beneath it; a track at a wall end was never identified.
+
+**The interceptor closes the loop.** When the *enforced* verdict is `danger` and an intruder
+is at the wall, a vehicle drives out from its road behind the rail, freezes it for 2.2 s,
+takes it off the map, and a fresh intruder takes its place. It is triggered by the declared
+verdict, not by a timer — delete the danger-granting axioms in the live editor and the
+vehicle is never sent, which is the point of declaring the rule instead of writing an `if`
+in the page.
+
+**Fault pacing is a rate, deliberately.** One global timer, at most one unit down at a time,
+nothing in the first 20 s, and a gap of 70–120 s between events: about 0.6 faults per minute,
+measured across five seeds and pinned by a test. An earlier version rolled a fault per unit
+every few seconds — 20 events in six minutes — which made "blind" the page's resting state
+rather than an event worth noticing.
+
+The state is the six units' own leaves, not a pre-digested score:
+
+```json
+{"site": "airbase perimeter, night watch",
+ "camera_1": "online, clear", "camera_2": "online, contact (unclassified)",
+ "camera_3": "offline, no reading", "camera_4": "online, clear",
+ "rail_patrol_1": "online, contact (person)", "rail_patrol_2": "online, clear",
+ "units_not_online": "camera 3 (offline)", "contact_age": "now",
+ "patrol_classification": "person by rail patrol 1"}
+```
+
+Flat and scalar, nine leaves — `server.py` `str()`s each top-level value, and the head
+prepends the whole text as field 0, so a nested object or a merged leaf would lose the
+decisive one. It carries **no ground truth**: a test drives an intruder through a fully
+blind perimeter and requires the state to be byte-identical to an empty one.
+
+### The rule: a blind sector is not a clean sector
+
+Eleven axioms in the same four forms the other domains use. The two that carry the domain:
+
+- `BlindSector ⊥ safe` / `DegradedSensor ⊥ safe` — a unit that cannot report is not a unit
+  that reported nothing. This is `guard_pii.py`'s argument about an unreachable detector,
+  applied to a perimeter: a caller that cannot tell "checked, nothing found" from "could not
+  check" reads a blind spot as a health certificate.
+- `CorroboratedContact ⊑ verdict ∈ {danger}` / `PatrolIdentification ⊑ verdict ∈ {danger}` —
+  corroboration is counted by **evidence group**, not by unit. The four cameras each count
+  once; the two patrols share one group, because they look at the same band from the same
+  line and their agreement is not two independent observations. A single uncorroborated
+  contact withdraws `safe` and does nothing else — that is what `not sure` is for.
+
+`divergence()` runs the declared reasoner and the hand-written twin over every picture
+shape the simulator can produce (108 shapes in the test) and requires zero disagreements; a
+second test deliberately breaks an axiom to prove the check can fail.
+
+### The rule is a veto, not a menu — and why that differs from the warehouse
+
+`warehouse.html` filters its question's criteria through the ontology's permitted set, so
+the model cannot answer an action the rule withdrew. **Here that would make the demo
+vacuous.** On a confirmed intruder the permitted set is `{danger}` — a one-option question,
+which the service answers with confidence 1.000 for every arm on every state, and the eval
+would report a tautology as a result.
+
+So all three verdicts are always offered, and the ontology is applied to the **answer**:
+
+1. the model reads the six leaves and picks a verdict;
+2. the rule decides what that picture permits;
+3. an answer outside it is **refused**, and the safest permitted verdict is enforced — shown
+   in the row as `model not sure (REFUSED by the rule)` rather than quietly corrected.
+
+The model cannot enforce a verdict the rule withdrew, and it is still being asked something
+it can get wrong. The page prints the permitted set beside every answer so the veto is
+visible rather than silent.
+
+### Measuring an arm
+
+```sh
+uv run python -m uvicorn server:app --port 8001
+node eval_airbase.mjs --url http://127.0.0.1:8001/api/predict --model ciel_decision_model_v1
+node eval_airbase.mjs --model english --path ""          # a laya arm, no sub-path
+```
+
+The harness drives the shipped sim, snapshots every 1.2 s of it, and reports per slice
+(clean / degraded / blind / contact / confirmed) the two numbers that matter: how often the
+model's answer is one the rule permits, and how often it names the verdict the rule alone
+determines. Where the rule permits two verdicts there is **no gold** and those rows are not
+scored — picking either is a legal reading of the same evidence.
+
+There is no airbase-trained head. The first measurement of `ciel_decision_model_v1` over 30
+scenarios: 50% of answers inside the permitted set, 33% correct on confirmed intruders (it
+answers `not sure` to most of them). That is the honest reading — an out-of-domain
+checkpoint *being* out of domain, with the rule catching two thirds of it. Use this harness
+to compare arms; do not read a single arm's number as a property of the demo.
+
+### What is not claimed
+
+- The structural rule is only as good as the sensors' leaves. An intruder in a gap between
+  two wedges, with the patrols elsewhere, is genuinely unobservable — that is the design.
+- Automatic faults are on by default and are a **toggle**, not a hidden chance: a demo that
+  silently blinded a camera would look like a model bug rather than a scenario. The
+  `sensor faults` checkbox turns them off and leaves the manual buttons working.
+- The four-camera spacing and 34° half-FOV are legible constants, not calibrated ones.
+  Changing them changes how often an intruder gets in unseen, which the tests measure.
+- The interceptor is a **visual response**, not a simulated engagement. It drives, holds and
+  removes a track; nothing about it is measured, and its speed and hold time are legible
+  constants rather than calibrated ones.
 
 ## The traffic guard — a network under attack, defended by declared rules
 

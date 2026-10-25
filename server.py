@@ -94,6 +94,11 @@ class PredictRequest(BaseModel):
     state: dict[str, Any] = Field(min_length=1)
     questions: dict[str, Question] = Field(min_length=1)
     model: ModelOverride = "auto"
+    # An explicit decision_lab sub-path, for a page whose dropdown lists the service's
+    # own heads (`airbase.html`). Only meaningful on a `ciel_*` model; on the laya arms
+    # it is ignored rather than an error, because a page that offers one dropdown for
+    # both keeps sending it after the user switches arm.
+    path: str | None = None
 
 
 class _RouterState:
@@ -190,7 +195,8 @@ def predict(request: PredictRequest) -> dict[str, Any]:
     if request.model in ("ciel_decision_model_v1", "ciel_warehouse_v1", "ciel_typed_v1"):
         try:
             result = ciel.predict(
-                _stringify_state(request.state), questions, model=request.model
+                _stringify_state(request.state), questions,
+                model=request.model, path=request.path,
             )
         except ciel.CielError as exc:
             raise HTTPException(
@@ -198,7 +204,7 @@ def predict(request: PredictRequest) -> dict[str, Any]:
                 detail=f"ciel failed: {exc}" + (f" — {exc.body[:400]}" if exc.body else ""),
             ) from exc
         latency_ms = round((time.perf_counter() - start) * 1000, 1)
-        path = ciel.resolve_path(request.model)
+        path = ciel.resolve_path(request.model, request.path)
         return {
             "result": result,
             "latency_ms": latency_ms,
