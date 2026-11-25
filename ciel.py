@@ -223,6 +223,39 @@ def _from_lab_answers(
     }
 
 
+def _decide(payload: Dict[str, Any], timeout: float) -> Dict[str, Any]:
+    """POST one already-built payload to decision_lab and return its body."""
+    request = urllib.request.Request(
+        base_url() + DECIDE_PATH,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            # Opt this client into Decision Lab's traffic capture so its calls
+            # can be labeled and used as real training data. The server only
+            # logs when web.log_traffic is also enabled.
+            "X-Decision-Lab-Log": "1",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")
+        raise CielError(f"Decision Lab request failed ({exc.code})", status=exc.code, body=detail) from exc
+    except urllib.error.URLError as exc:
+        raise CielError(f"could not reach Decision Lab: {exc.reason}") from exc
+
+
+def _envelope(qids: list[str], questions: Mapping[str, Dict[str, Any]], body: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "model": MODEL_NAME,
+        "provider": "decision_lab",
+        "answers": _from_lab_answers(qids, questions, body.get("answers") or []),
+        "usage": {"input_tokens": 0, "output_tokens": 0},
+    }
+
+
 def predict(
     state: Mapping[str, Any],
     questions: Mapping[str, Dict[str, Any]],
@@ -251,31 +284,27 @@ def predict(
     resolved = resolve_path(model, path)
     if resolved is not None:
         payload["path"] = resolved
-    request = urllib.request.Request(
-        base_url() + DECIDE_PATH,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            # Opt this client into Decision Lab's traffic capture so its calls
-            # can be labeled and used as real training data. The server only
-            # logs when web.log_traffic is also enabled.
-            "X-Decision-Lab-Log": "1",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            body = json.load(response)
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")
-        raise CielError(f"Decision Lab request failed ({exc.code})", status=exc.code, body=detail) from exc
-    except urllib.error.URLError as exc:
-        raise CielError(f"could not reach Decision Lab: {exc.reason}") from exc
+    return _envelope(qids, questions, _decide(payload, timeout))
 
-    answers = _from_lab_answers(qids, questions, body.get("answers") or [])
-    return {
-        "model": MODEL_NAME,
-        "provider": "decision_lab",
-        "answers": answers,
-        "usage": {"input_tokens": 0, "output_tokens": 0},
+
+def predict_text(
+    text: str,
+    questions: Mapping[str, Dict[str, Any]],
+    path: str = "vds",
+    stt_source: str = "typed-demo@1",
+    timeout: float = DEFAULT_TIMEOUT,
+) -> Dict[str, Any]:
+    """Ask a text-trained sub-path (vds) with the utterance sent verbatim.
+
+    `predict()` serializes a state dict as JSON, which is what the warehouse
+    head trained on. The vds head trained on raw Korean utterances, so its
+    `custom_text` must not pass through `_state_to_custom_text`.
+    """
+    lab_questions, qids = _to_lab_questions(questions)
+    payload = {
+        "path": path,
+        "custom_text": text,
+        "stt_source": stt_source,
+        "questions": lab_questions,
     }
+    return _envelope(qids, questions, _decide(payload, timeout))

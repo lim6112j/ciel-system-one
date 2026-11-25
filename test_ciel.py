@@ -257,3 +257,19 @@ def test_predict_reports_an_unreachable_service(monkeypatch):
 def test_health_false_when_unreachable(monkeypatch):
     monkeypatch.setenv("DECISION_LAB_URL", "http://127.0.0.1:1")
     assert ciel.health() is False
+
+
+def test_predict_text_sends_raw_custom_text_and_provenance(lab_server):
+    result = ciel.predict_text(
+        "시청까지 어떻게 가요?",
+        {"intent": {"type": "choice", "instructions": "이 발화의 의도는?",
+                    "criteria": {"기타": "기타"}}},
+    )
+    assert _LabHandler.received == {
+        "path": "vds",
+        "custom_text": "시청까지 어떻게 가요?",
+        "stt_source": "typed-demo@1",
+        "questions": [{"type": "choice", "question": "이 발화의 의도는?",
+                       "options": ["기타"]}],
+    }
+    assert result["answers"]["intent"]["type"] == "choice"
