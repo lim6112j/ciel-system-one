@@ -53,6 +53,8 @@ import guard_agent
 
 import guard_pii
 
+import vds_chat
+
 QuestionType = Literal["choice", "score", "noul"]
 ModelOverride = Literal[
     "auto", "english", "multilingual", "typed-decisions", "jev",
@@ -449,6 +451,15 @@ class GuardRequest(BaseModel):
     path: str | None = None
 
 
+class VDSChatRequest(BaseModel):
+    """One chat turn. `intent` is optional because the browser starts the
+    LLM call in parallel with intent classification, before it has a label.
+    """
+
+    message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
+    intent: str | None = None
+
+
 def _loaded_checkpoints(guard: Any) -> list[str]:
     """Which laya checkpoints are resident, if the guard has a laya detector at all.
 
@@ -592,6 +603,56 @@ def guard_scan_text(request: GuardRequest) -> dict[str, Any]:
         "findings": guard_agent._findings_payload(report),
         "latency_ms": latency_ms,
     }
+
+
+# ---------------------------------------------------------------------------
+# The VDS chatbot's HTTP surface
+# ---------------------------------------------------------------------------
+# Both routes are network-only: the fast one calls the local decision_lab
+# service, the slow one an OpenRouter chat model. Neither touches the process's
+# Metal device, so neither takes `_RouterState.device_lock`.
+
+
+@app.post("/api/vds-chat/intent")
+def vds_chat_intent(request: VDSChatRequest) -> dict[str, Any]:
+    """Classify one utterance with the existing `vds` sub-path.
+
+    A failed or unknown classification is not a failed turn: the demo still
+    owes the user a natural backchannel, so it degrades to `기타`.
+    """
+    start = time.perf_counter()
+    try:
+        result = ciel.predict_text(
+            request.message,
+            {"intent": vds_chat.INTENT_QUESTION},
+            path="vds",
+        )
+        lab_answer = result["answers"]["intent"]
+        intent = str(lab_answer.get("choice") or "기타")
+        confidence = float(lab_answer.get("confidence") or 0.0)
+    except Exception:
+        intent, confidence = "기타", 0.0
+    latency_ms = round((time.perf_counter() - start) * 1000, 1)
+    return {
+        "intent": intent,
+        "backchannel": vds_chat.backchannel_for(intent),
+        "confidence": confidence,
+        "latency_ms": latency_ms,
+    }
+
+
+@app.post("/api/vds-chat/answer")
+def vds_chat_answer(request: VDSChatRequest) -> dict[str, Any]:
+    """Write the full answer with the repo's chat model convention."""
+    start = time.perf_counter()
+    try:
+        answer = vds_chat.answer(request.message, request.intent)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"chat model failed: {exc}") from exc
+    if not answer:
+        raise HTTPException(status_code=502, detail="chat model failed: empty answer")
+    latency_ms = round((time.perf_counter() - start) * 1000, 1)
+    return {"answer": answer, "latency_ms": latency_ms}
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

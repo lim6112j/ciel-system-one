@@ -1040,3 +1040,71 @@ def test_the_scan_route_is_not_shadowed_by_the_static_mount():
     assert response.status_code == 503, (
         f"expected the route's own 'still loading' 503, got {response.status_code}"
     )
+
+
+def test_vds_chat_intent_returns_backchannel(client, monkeypatch):
+    test_client, _ = client
+
+    def fake_predict_text(text, questions, **kwargs):
+        assert text == "시청까지 어떻게 가요?"
+        assert kwargs == {"path": "vds"}
+        assert questions["intent"] == server_module.vds_chat.INTENT_QUESTION
+        return {"answers": {"intent": {"type": "choice", "choice": "변경",
+                                       "confidence": 0.91}}}
+
+    monkeypatch.setattr(server_module.ciel, "predict_text", fake_predict_text)
+    response = test_client.post("/api/vds-chat/intent",
+                                json={"message": "시청까지 어떻게 가요?"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "변경"
+    assert body["backchannel"] == "네, 경로 바꿔볼게요."
+    assert body["confidence"] == 0.91
+    assert body["latency_ms"] >= 0
+
+
+def test_vds_chat_intent_degrades_on_upstream_error(client, monkeypatch):
+    test_client, _ = client
+
+    def boom(*args, **kwargs):
+        raise server_module.ciel.CielError("down")
+
+    monkeypatch.setattr(server_module.ciel, "predict_text", boom)
+    response = test_client.post("/api/vds-chat/intent", json={"message": "아무 말"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "기타"
+    assert body["backchannel"] == "그러니까요, 잠깐 확인할게요."
+    assert body["confidence"] == 0.0
+
+
+def test_vds_chat_answer_returns_llm_text(client, monkeypatch):
+    test_client, _ = client
+    monkeypatch.setattr(server_module.vds_chat, "answer",
+                        lambda message, intent: "2호선을 타고 시청역에서 내리세요.")
+    response = test_client.post("/api/vds-chat/answer",
+                                json={"message": "시청까지 어떻게 가요?",
+                                      "intent": "배차요청"})
+    assert response.status_code == 200
+    assert response.json()["answer"] == "2호선을 타고 시청역에서 내리세요."
+    assert response.json()["latency_ms"] >= 0
+
+
+def test_vds_chat_answer_502_on_failure(client, monkeypatch):
+    test_client, _ = client
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(server_module.vds_chat, "answer", boom)
+    response = test_client.post("/api/vds-chat/answer",
+                                json={"message": "시청까지 어떻게 가요?"})
+    assert response.status_code == 502
+    assert "provider down" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("path", ["/api/vds-chat/intent", "/api/vds-chat/answer"])
+def test_vds_chat_rejects_empty_message(client, path):
+    test_client, _ = client
+    response = test_client.post(path, json={"message": ""})
+    assert response.status_code == 422
