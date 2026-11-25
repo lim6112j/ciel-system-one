@@ -1214,3 +1214,15 @@ def test_oms_chat_answer_returns_text_and_502(client, monkeypatch):
     bad = test_client.post("/api/oms-chat/answer", json={"message": "아무 말"})
     assert bad.status_code == 502
     assert "provider down" in bad.json()["detail"]
+
+
+def test_oms_chat_page_is_served_and_linked(client):
+    test_client, _ = client
+    page = test_client.get("/oms_chat.html")
+    assert page.status_code == 200
+    assert "oms_chat.js" in page.text
+    assert 'id="oms-delay"' in page.text
+    assert 'id="oms-delay-value"' in page.text
+    assert "OMS 시작 지연" in page.text
+    index = test_client.get("/index.html")
+    assert "/oms_chat.html" in index.text

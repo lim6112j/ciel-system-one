@@ -2183,6 +2183,27 @@ head classifies **배차 의도**, not 길안내. Its labels are mapped to Korea
 backchannel copy purely so the fast reply sounds natural. No model-repo config,
 data, or checkpoint was changed for it.
 
+## The OMS chatbot — a backchannel for 주류도매
+
+Open `/oms_chat.html` after `uv run python -m uvicorn server:app`. It uses the
+`oms` sub-path in `../ciel-system-one-model` to classify a KakaoTalk-style message
+as 주문 / 조회 / 질문, shows a short Korean 추임새 immediately, then appends the
+OpenRouter answer. The delay slider works exactly as on the VDS page: the LLM
+request starts at submit, only the classifier request waits 50–500 ms.
+
+Both decision_lab configs bind port 8000 (and llama-server 8080), so run one at a
+time. Stop the VDS service and start OMS with:
+
+```bash
+cd ../ciel-system-one-model
+python -m decision_lab --config configs/oms.yaml ui
+```
+
+OMS has only three intent options, so its confidence floor is **0.5** (VDS uses
+0.3). Below that, the page shows the fallback backchannel and says the head's
+confidence is low. The item prices in the prompt are **demo examples**, not live
+inventory.
+
 ## Startup performance
 
 Stock `laya` + `Router(preload=True)` spent ~100s before the first prediction on
