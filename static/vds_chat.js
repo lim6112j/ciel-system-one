@@ -1,15 +1,16 @@
 // node --test test_vds_chat_ui.mjs
 //
-// The ordering is the whole demo: the fast vds head gets a human-sounding reaction
-// on screen before the slow chat model answers. Both requests start together;
-// if the chat model wins the race, its text waits for the backchannel.
+// The ordering is the whole demo: the answer request starts immediately, while
+// the VDS request waits the configured delay before classifying. If the chat
+// model wins the race, its text waits for the backchannel.
 
 export const FALLBACK_BACKCHANNEL = "그러니까요, 잠깐 확인할게요.";
 const ANSWER_FAILURE = "답변을 가져오지 못했어요.";
 const CLIENT_WARNING = "VDS를 사용할 수 없어 기본 추임새를 썼어요.";
 
-export async function runTurn(message, deps) {
+export async function runTurn(message, deps, vdsDelayMs = 150) {
   deps.renderUser(message);
+  const sleep = deps.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
 
   const post = (url, body) => deps.fetchImpl(url, {
     method: "POST",
@@ -27,6 +28,7 @@ export async function runTurn(message, deps) {
     })
     .catch(() => ANSWER_FAILURE);
 
+  await sleep(vdsDelayMs);
   const intentPromise = post("/api/vds-chat/intent", { message })
     .then(data => {
       deps.renderLatency("VDS", data.latency_ms);
@@ -54,6 +56,8 @@ if (typeof document !== "undefined") {
   const input = $("message");
   const status = $("status");
   const warning = $("warning");
+  const delay = $("vds-delay");
+  const delayValue = $("vds-delay-value");
   const latencies = {};
 
   const appendTurn = (who, text, answerText = null) => {
@@ -90,6 +94,10 @@ if (typeof document !== "undefined") {
     warning.hidden = false;
   };
 
+  delay.addEventListener("input", () => {
+    delayValue.textContent = `${delay.value}ms`;
+  });
+
   document.querySelectorAll("[data-example]").forEach(button => {
     button.addEventListener("click", () => {
       input.value = button.dataset.example;
@@ -115,7 +123,7 @@ if (typeof document !== "undefined") {
         renderAnswer: text => appendTurn("laya — 길안내", "", text),
         renderLatency,
         renderWarning,
-      });
+      }, Number(delay.value));
     } finally {
       input.value = "";
       input.disabled = false;

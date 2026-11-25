@@ -1140,5 +1140,13 @@ def test_vds_chat_page_is_served_and_linked(client):
     assert "vds_chat.js" in page.text
     assert "composer" in page.text
     assert 'id="warning"' in page.text
+    assert 'id="vds-delay"' in page.text
+    assert 'id="vds-delay-value"' in page.text
+    assert 'min="50"' in page.text
+    assert 'max="500"' in page.text
+    assert 'step="50"' in page.text
+    assert 'value="150"' in page.text
+    assert "VDS 시작 지연" in page.text
+    assert 'id="status"' in page.text
     index = test_client.get("/index.html")
     assert "/vds_chat.html" in index.text

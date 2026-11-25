@@ -25,6 +25,7 @@ test("backchannel renders before the answer even when the LLM resolves first", a
 
   const turn = runTurn("경로 바꿔줘", {
     fetchImpl,
+    sleep: async () => {},
     renderUser: () => events.push("user"),
     renderBackchannel: text => events.push(`backchannel:${text}`),
     renderAnswer: text => events.push(`answer:${text}`),
@@ -114,4 +115,54 @@ test("a degraded intent is shown to the user, not hidden behind a fallback", asy
     "backchannel:그러니까요, 잠깐 확인할게요.",
     "answer:2호선을 타세요.",
   ]);
+});
+
+test("the configured delay holds VDS but not the LLM request", async () => {
+  const events = [];
+  const sleeps = [];
+  const latencies = [];
+  const fetchImpl = (url) => {
+    events.push(`fetch:${url}`);
+    return Promise.resolve({ json: async () => url === "/api/vds-chat/intent"
+      ? { backchannel: "네, 가는 길 확인하고 있어요.", latency_ms: 40 }
+      : { answer: "2호선을 타세요.", latency_ms: 10 } });
+  };
+
+  await runTurn("시청까지 어떻게 가요?", {
+    fetchImpl,
+    sleep: async ms => { sleeps.push(ms); events.push(`sleep:${ms}`); },
+    renderUser: () => events.push("user"),
+    renderBackchannel: text => events.push(`backchannel:${text}`),
+    renderAnswer: text => events.push(`answer:${text}`),
+    renderLatency: (label, ms) => latencies.push([label, ms]),
+  }, 50);
+
+  assert.deepEqual(sleeps, [50]);
+  assert.deepEqual(latencies.filter(([label]) => label === "VDS"), [["VDS", 40]]);
+  assert.deepEqual(events, [
+    "user",
+    "fetch:/api/vds-chat/answer",
+    "sleep:50",
+    "fetch:/api/vds-chat/intent",
+    "backchannel:네, 가는 길 확인하고 있어요.",
+    "answer:2호선을 타세요.",
+  ]);
+});
+
+test("an untouched slider uses the 150ms default", async () => {
+  const sleeps = [];
+  const fetchImpl = () => Promise.resolve({ json: async () => ({
+    backchannel: "네, 가는 길 확인하고 있어요.", answer: "지도 볼게요.", latency_ms: 1,
+  }) });
+
+  await runTurn("아무 말", {
+    fetchImpl,
+    sleep: async ms => { sleeps.push(ms); },
+    renderUser: () => {},
+    renderBackchannel: () => {},
+    renderAnswer: () => {},
+    renderLatency: () => {},
+  });
+
+  assert.deepEqual(sleeps, [150]);
 });
