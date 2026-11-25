@@ -1150,3 +1150,67 @@ def test_vds_chat_page_is_served_and_linked(client):
     assert 'id="status"' in page.text
     index = test_client.get("/index.html")
     assert "/vds_chat.html" in index.text
+
+
+def test_oms_chat_intent_returns_backchannel(client, monkeypatch):
+    test_client, _ = client
+
+    def fake_predict_text(text, questions, **kwargs):
+        assert text == "참이슬 2박스 보내주세요"
+        assert kwargs == {"path": "oms", "stt_source": "kakaotalk-demo@1"}
+        assert questions["intent"] == server_module.oms_chat.OMS_QUESTION
+        return {"answers": {"intent": {"type": "choice", "choice": "주문",
+                                       "confidence": 0.92}}}
+
+    monkeypatch.setattr(server_module.ciel, "predict_text", fake_predict_text)
+    response = test_client.post("/api/oms-chat/intent",
+                                json={"message": "참이슬 2박스 보내주세요"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "주문"
+    assert body["backchannel"] == "네, 주문 접수 도와드릴게요."
+    assert body["degraded"] is False
+    assert body["warning"] is None
+
+
+def test_oms_chat_intent_degrades_at_0_4_confidence(client, monkeypatch):
+    test_client, _ = client
+    monkeypatch.setattr(server_module.ciel, "predict_text",
+                        lambda *a, **k: {"answers": {"intent": {
+                            "type": "choice", "choice": "질문", "confidence": 0.4}}})
+    response = test_client.post("/api/oms-chat/intent", json={"message": "얼마예요?"})
+    body = response.json()
+    assert body["intent"] == "기타"
+    assert body["backchannel"] == "그러니까요, 잠깐 확인할게요."
+    assert body["degraded"] is True
+    assert body["warning"] == "OMS 헤드 신뢰도가 낮아 기본 추임새를 썼어요."
+
+
+def test_oms_chat_intent_degrades_on_upstream_error(client, monkeypatch):
+    test_client, _ = client
+
+    def boom(*args, **kwargs):
+        raise server_module.ciel.CielError("down")
+
+    monkeypatch.setattr(server_module.ciel, "predict_text", boom)
+    response = test_client.post("/api/oms-chat/intent", json={"message": "아무 말"})
+    assert response.status_code == 200
+    assert response.json()["warning"] == "OMS를 사용할 수 없어 기본 추임새를 썼어요."
+
+
+def test_oms_chat_answer_returns_text_and_502(client, monkeypatch):
+    test_client, _ = client
+    monkeypatch.setattr(server_module.oms_chat, "answer",
+                        lambda message, intent: "참이슬 2박스 주문 도와드릴게요.")
+    ok = test_client.post("/api/oms-chat/answer",
+                          json={"message": "참이슬 2박스 보내주세요", "intent": "주문"})
+    assert ok.status_code == 200
+    assert ok.json()["answer"] == "참이슬 2박스 주문 도와드릴게요."
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(server_module.oms_chat, "answer", boom)
+    bad = test_client.post("/api/oms-chat/answer", json={"message": "아무 말"})
+    assert bad.status_code == 502
+    assert "provider down" in bad.json()["detail"]

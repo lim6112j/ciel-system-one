@@ -53,6 +53,8 @@ import guard_agent
 
 import guard_pii
 
+import oms_chat
+
 import vds_chat
 
 QuestionType = Literal["choice", "score", "noul"]
@@ -460,6 +462,13 @@ class VDSChatRequest(BaseModel):
     intent: str | None = None
 
 
+class OmsChatRequest(BaseModel):
+    """Same turn shape for the 주류도매 OMS demo."""
+
+    message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
+    intent: str | None = None
+
+
 def _loaded_checkpoints(guard: Any) -> list[str]:
     """Which laya checkpoints are resident, if the guard has a laya detector at all.
 
@@ -659,6 +668,59 @@ def vds_chat_answer(request: VDSChatRequest) -> dict[str, Any]:
     start = time.perf_counter()
     try:
         answer = vds_chat.answer(request.message, request.intent)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"chat model failed: {exc}") from exc
+    if not answer:
+        raise HTTPException(status_code=502, detail="chat model failed: empty answer")
+    latency_ms = round((time.perf_counter() - start) * 1000, 1)
+    return {"answer": answer, "latency_ms": latency_ms}
+
+
+# The OMS chatbot has its own page and routes, but the same network-only
+# shape as the VDS pair: no device lock, no guard scan.
+
+
+@app.post("/api/oms-chat/intent")
+def oms_chat_intent(request: OmsChatRequest) -> dict[str, Any]:
+    """Classify one KakaoTalk message with the `oms` sub-path."""
+    start = time.perf_counter()
+    degraded = False
+    warning = None
+    try:
+        result = ciel.predict_text(
+            request.message,
+            {"intent": oms_chat.OMS_QUESTION},
+            path="oms",
+            stt_source="kakaotalk-demo@1",
+        )
+        lab_answer = result["answers"]["intent"]
+        intent = str(lab_answer.get("choice") or "기타")
+        confidence = float(lab_answer.get("confidence") or 0.0)
+        if confidence < oms_chat.MIN_CONFIDENCE:
+            intent = "기타"
+            degraded = True
+            warning = oms_chat.LOW_CONFIDENCE_WARNING
+    except Exception:
+        intent, confidence = "기타", 0.0
+        degraded = True
+        warning = oms_chat.UNAVAILABLE_WARNING
+    latency_ms = round((time.perf_counter() - start) * 1000, 1)
+    return {
+        "intent": intent,
+        "backchannel": oms_chat.backchannel_for(intent),
+        "confidence": confidence,
+        "degraded": degraded,
+        "warning": warning,
+        "latency_ms": latency_ms,
+    }
+
+
+@app.post("/api/oms-chat/answer")
+def oms_chat_answer(request: OmsChatRequest) -> dict[str, Any]:
+    """Write the full OMS answer with the repo's chat model convention."""
+    start = time.perf_counter()
+    try:
+        answer = oms_chat.answer(request.message, request.intent)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"chat model failed: {exc}") from exc
     if not answer:
