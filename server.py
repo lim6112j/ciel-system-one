@@ -621,6 +621,8 @@ def vds_chat_intent(request: VDSChatRequest) -> dict[str, Any]:
     owes the user a natural backchannel, so it degrades to `기타`.
     """
     start = time.perf_counter()
+    degraded = False
+    warning = None
     try:
         result = ciel.predict_text(
             request.message,
@@ -630,13 +632,23 @@ def vds_chat_intent(request: VDSChatRequest) -> dict[str, Any]:
         lab_answer = result["answers"]["intent"]
         intent = str(lab_answer.get("choice") or "기타")
         confidence = float(lab_answer.get("confidence") or 0.0)
+        if confidence < vds_chat.MIN_CONFIDENCE:
+            # A random/untrained head answers at chance (~0.1 here). Showing
+            # its argmax as if it were an intent is worse than saying so.
+            intent = "기타"
+            degraded = True
+            warning = vds_chat.LOW_CONFIDENCE_WARNING
     except Exception:
         intent, confidence = "기타", 0.0
+        degraded = True
+        warning = vds_chat.UNAVAILABLE_WARNING
     latency_ms = round((time.perf_counter() - start) * 1000, 1)
     return {
         "intent": intent,
         "backchannel": vds_chat.backchannel_for(intent),
         "confidence": confidence,
+        "degraded": degraded,
+        "warning": warning,
         "latency_ms": latency_ms,
     }
 

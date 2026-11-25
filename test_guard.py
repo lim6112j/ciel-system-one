@@ -112,7 +112,7 @@ def test_unknown_model_is_refused_not_defaulted():
         guard_pii.resolve_arm("engish")
 
 
-def test_unknown_path_is_refused():
+def test_unknown_path_is_refused(paths_server):
     with pytest.raises(guard_pii.ArmError, match="unknown path"):
         guard_pii.resolve_arm("ciel_typed_v1", "nosuchpath")
 

@@ -1060,6 +1060,8 @@ def test_vds_chat_intent_returns_backchannel(client, monkeypatch):
     assert body["intent"] == "변경"
     assert body["backchannel"] == "네, 경로 바꿔볼게요."
     assert body["confidence"] == 0.91
+    assert body["degraded"] is False
+    assert body["warning"] is None
     assert body["latency_ms"] >= 0
 
 
@@ -1076,6 +1078,27 @@ def test_vds_chat_intent_degrades_on_upstream_error(client, monkeypatch):
     assert body["intent"] == "기타"
     assert body["backchannel"] == "그러니까요, 잠깐 확인할게요."
     assert body["confidence"] == 0.0
+    assert body["degraded"] is True
+    assert body["warning"] == "VDS를 사용할 수 없어 기본 추임새를 썼어요."
+
+
+def test_vds_chat_intent_degrades_on_low_confidence(client, monkeypatch):
+    test_client, _ = client
+
+    def fake_predict_text(text, questions, **kwargs):
+        return {"answers": {"intent": {"type": "choice", "choice": "도움말",
+                                       "confidence": 0.1}}}
+
+    monkeypatch.setattr(server_module.ciel, "predict_text", fake_predict_text)
+    response = test_client.post("/api/vds-chat/intent",
+                                json={"message": "시청까지 어떻게 가요?"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "기타"
+    assert body["backchannel"] == "그러니까요, 잠깐 확인할게요."
+    assert body["confidence"] == 0.1
+    assert body["degraded"] is True
+    assert body["warning"] == "VDS 헤드 신뢰도가 낮아 기본 추임새를 썼어요."
 
 
 def test_vds_chat_answer_returns_llm_text(client, monkeypatch):
@@ -1116,5 +1139,6 @@ def test_vds_chat_page_is_served_and_linked(client):
     assert page.status_code == 200
     assert "vds_chat.js" in page.text
     assert "composer" in page.text
+    assert 'id="warning"' in page.text
     index = test_client.get("/index.html")
     assert "/vds_chat.html" in index.text

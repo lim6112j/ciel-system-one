@@ -6,6 +6,7 @@
 
 export const FALLBACK_BACKCHANNEL = "그러니까요, 잠깐 확인할게요.";
 const ANSWER_FAILURE = "답변을 가져오지 못했어요.";
+const CLIENT_WARNING = "VDS를 사용할 수 없어 기본 추임새를 썼어요.";
 
 export async function runTurn(message, deps) {
   deps.renderUser(message);
@@ -29,9 +30,13 @@ export async function runTurn(message, deps) {
   const intentPromise = post("/api/vds-chat/intent", { message })
     .then(data => {
       deps.renderLatency("VDS", data.latency_ms);
+      if (data.degraded && deps.renderWarning) deps.renderWarning(data.warning || CLIENT_WARNING);
       deps.renderBackchannel(data.backchannel || FALLBACK_BACKCHANNEL);
     })
-    .catch(() => deps.renderBackchannel(FALLBACK_BACKCHANNEL));
+    .catch(() => {
+      if (deps.renderWarning) deps.renderWarning(CLIENT_WARNING);
+      deps.renderBackchannel(FALLBACK_BACKCHANNEL);
+    });
 
   // Promise.all is the ordering gate, not a speed gate: both calls are already
   // in flight. The answer is rendered only after the backchannel promise has
@@ -48,6 +53,7 @@ if (typeof document !== "undefined") {
   const form = $("composer");
   const input = $("message");
   const status = $("status");
+  const warning = $("warning");
   const latencies = {};
 
   const appendTurn = (who, text, answerText = null) => {
@@ -79,6 +85,11 @@ if (typeof document !== "undefined") {
     status.textContent = parts.join(" · ");
   };
 
+  const renderWarning = text => {
+    warning.textContent = text;
+    warning.hidden = false;
+  };
+
   document.querySelectorAll("[data-example]").forEach(button => {
     button.addEventListener("click", () => {
       input.value = button.dataset.example;
@@ -93,6 +104,8 @@ if (typeof document !== "undefined") {
     form.dataset.busy = "1";
     input.disabled = true;
     form.querySelector("button").disabled = true;
+    warning.hidden = true;
+    warning.textContent = "";
 
     try {
       await runTurn(message, {
@@ -101,6 +114,7 @@ if (typeof document !== "undefined") {
         renderBackchannel: text => appendTurn("VDS — 추임새", text),
         renderAnswer: text => appendTurn("laya — 길안내", "", text),
         renderLatency,
+        renderWarning,
       });
     } finally {
       input.value = "";

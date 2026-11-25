@@ -87,3 +87,31 @@ test("answer failure keeps the backchannel and shows a short failure line", asyn
     "answer:답변을 가져오지 못했어요.",
   ]);
 });
+
+test("a degraded intent is shown to the user, not hidden behind a fallback", async () => {
+  const events = [];
+  let warning = null;
+  const fetchImpl = (url) => url === "/api/vds-chat/intent"
+    ? Promise.resolve({ json: async () => ({
+        intent: "기타", backchannel: "그러니까요, 잠깐 확인할게요.",
+        confidence: 0.1, degraded: true,
+        warning: "VDS 헤드 신뢰도가 낮아 기본 추임새를 썼어요.", latency_ms: 5,
+      })})
+    : Promise.resolve({ json: async () => ({ answer: "2호선을 타세요.", latency_ms: 10 }) });
+
+  await runTurn("시청까지 어떻게 가요?", {
+    fetchImpl,
+    renderUser: () => events.push("user"),
+    renderBackchannel: text => events.push(`backchannel:${text}`),
+    renderAnswer: text => events.push(`answer:${text}`),
+    renderLatency: () => {},
+    renderWarning: text => { warning = text; },
+  });
+
+  assert.equal(warning, "VDS 헤드 신뢰도가 낮아 기본 추임새를 썼어요.");
+  assert.deepEqual(events, [
+    "user",
+    "backchannel:그러니까요, 잠깐 확인할게요.",
+    "answer:2호선을 타세요.",
+  ]);
+});

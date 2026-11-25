@@ -28,6 +28,13 @@ INTENT_QUESTION: dict[str, Any] = {
 
 FALLBACK_BACKCHANNEL = "그러니까요, 잠깐 확인할게요."
 
+# Ten options make chance ~0.1. An untrained/random head answers at exactly
+# that level with a near-uniform distribution, so treat anything this low as
+# "no usable signal" rather than showing a confident-looking wrong reaction.
+MIN_CONFIDENCE = 0.3
+LOW_CONFIDENCE_WARNING = "VDS 헤드 신뢰도가 낮아 기본 추임새를 썼어요."
+UNAVAILABLE_WARNING = "VDS를 사용할 수 없어 기본 추임새를 썼어요."
+
 BACKCHANNELS: dict[str, str] = {
     "배차요청": "네, 가는 길 확인하고 있어요.",
     "예약": "네, 가는 길 확인하고 있어요.",

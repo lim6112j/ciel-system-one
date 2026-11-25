@@ -43,6 +43,10 @@
   }
   input[type="text"]:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
   #status { color: var(--muted); font-size: 12px; min-height: 18px; margin-top: 8px; }
+  #warning {
+    margin-top: 8px; border-radius: 6px; padding: 7px 9px;
+    background: #fffbeb; color: #92400e; font-size: 12px;
+  }
   #log { min-height: 280px; max-height: 56vh; overflow-y: auto; }
   .turn { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
   .turn .who {
@@ -83,6 +87,7 @@
       <button class="primary" type="submit">보내기</button>
     </form>
     <div id="status" aria-live="polite"></div>
+    <div id="warning" aria-live="polite" hidden></div>
   </div>
 
   <div class="panel">
