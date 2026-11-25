@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { runTurn } from "./static/vds_chat.js";
+import { CONFIG as VDS_CONFIG } from "./static/vds_chat.js";
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
@@ -147,6 +148,13 @@ test("the configured delay holds VDS but not the LLM request", async () => {
     "backchannel:네, 가는 길 확인하고 있어요.",
     "answer:2호선을 타세요.",
   ]);
+});
+
+test("vds wrapper points at the vds endpoints", () => {
+  assert.equal(VDS_CONFIG.intentUrl, "/api/vds-chat/intent");
+  assert.equal(VDS_CONFIG.answerUrl, "/api/vds-chat/answer");
+  assert.equal(VDS_CONFIG.delayId, "vds-delay");
+  assert.equal(VDS_CONFIG.classifierLabel, "VDS");
 });
 
 test("an untouched slider uses the 150ms default", async () => {
