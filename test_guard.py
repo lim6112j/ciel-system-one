@@ -978,7 +978,7 @@ def test_predict_and_guard_chat_share_one_lock(client):
 
 
 @pytest.fixture()
-def scan_client(monkeypatch):
+def scan_client(monkeypatch, paths_server):
     """A TestClient whose guard is REAL, with only the laya detector stubbed.
 
     Unlike the `client` fixture, the guard here is a real `guard_pii.Guard`, so the regex
@@ -992,6 +992,12 @@ def scan_client(monkeypatch):
 
     Installed the same way the `client` fixture does it, and — like it — deliberately
     NOT as a `with` block, so the lifespan and the real chat model never run.
+
+    It also depends on `paths_server`: `resolve_arm()` asks decision_lab which
+    sub-paths it serves, and a developer's local instance may be running an
+    unrelated config (e.g. oms only). Stubbing only `/api/paths` keeps these
+    scan-route tests about the guard, not about whichever service happens to
+    hold port 8000.
     """
     from fastapi.testclient import TestClient
 

@@ -2173,6 +2173,11 @@ answer when it arrives. The two requests start together, so the fast classificat
 fills the wait instead of adding to it. The `VDS …ms` / `LLM …ms` chips make the
 difference visible.
 
+The fast call uses `ciel.base_url()`, so start that service with `configs/vds.yaml`
+(`python -m decision_lab --config configs/vds.yaml ui` in `../ciel-system-one-model`)
+or point `DECISION_LAB_URL` at an instance whose `/api/paths` includes `vds`.
+Otherwise `/api/vds-chat/intent` degrades to the fallback backchannel on every turn.
+
 This is a latency-hiding UX demo, not a route-guidance accuracy claim: the `vds`
 head classifies **배차 의도**, not 길안내. Its labels are mapped to Korean
 backchannel copy purely so the fast reply sounds natural. No model-repo config,
