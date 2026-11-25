@@ -2164,6 +2164,20 @@ why a rate limiter belongs in front of an inspector rather than instead of one.
   `warehouse.html`'s routes — so a per-arm comparison rests on the arm label each row
   carries.
 
+## The VDS chatbot — a backchannel before the LLM
+
+Open `/vds_chat.html` after `uv run python -m uvicorn server:app`. Send a Korean
+route question and the page first shows a short, intent-shaped 추임새 from the
+`vds` sub-path in `../ciel-system-one-model`, then appends the full OpenRouter
+answer when it arrives. The two requests start together, so the fast classification
+fills the wait instead of adding to it. The `VDS …ms` / `LLM …ms` chips make the
+difference visible.
+
+This is a latency-hiding UX demo, not a route-guidance accuracy claim: the `vds`
+head classifies **배차 의도**, not 길안내. Its labels are mapped to Korean
+backchannel copy purely so the fast reply sounds natural. No model-repo config,
+data, or checkpoint was changed for it.
+
 ## Startup performance
 
 Stock `laya` + `Router(preload=True)` spent ~100s before the first prediction on

@@ -1108,3 +1108,13 @@ def test_vds_chat_rejects_empty_message(client, path):
     test_client, _ = client
     response = test_client.post(path, json={"message": ""})
     assert response.status_code == 422
+
+
+def test_vds_chat_page_is_served_and_linked(client):
+    test_client, _ = client
+    page = test_client.get("/vds_chat.html")
+    assert page.status_code == 200
+    assert "vds_chat.js" in page.text
+    assert "composer" in page.text
+    index = test_client.get("/index.html")
+    assert "/vds_chat.html" in index.text
